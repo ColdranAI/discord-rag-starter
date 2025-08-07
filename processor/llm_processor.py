@@ -624,6 +624,7 @@ Please provide a comprehensive answer citing your sources."""
             response = self.gemini_client.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
+                    model=os.getenv("GEMINI_MODEL", "gemini-pro"),
                     max_output_tokens=1000,
                     temperature=0.1
                 )
@@ -780,7 +781,7 @@ Please provide a comprehensive answer citing your sources."""
         query = job.data['query']
         llm_provider = job.llm_provider
         user_id = job.user_id
-        use_web_search = job.data.get('use_web_search', True)  # Default to True for enhanced answers
+        use_web_search = job.data.get('use_web_search', False)  # Default to False - use only when requested
         
         try:
             logger.info(f"Processing query for user {user_id} with {llm_provider}: {query[:100]}")

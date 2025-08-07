@@ -410,9 +410,17 @@ async def handle_natural_query(message, is_admin_user=False):
         if content.startswith("!ask"):
             content = content[4:].strip()
         
-        # Parse provider if specified
+        # Parse provider and options
         llm_provider = None
+        use_web_search = False
         valid_providers = ["openai", "gemini", "claude", "anthropic", "gpt", "google"]
+        
+        # Check for web search flag
+        if "web:" in content.lower() or content.lower().startswith("web "):
+            use_web_search = True
+            content = content.replace("web:", "").replace("Web:", "").strip()
+            if content.lower().startswith("web "):
+                content = content[4:].strip()
         
         # Check if message starts with a provider name
         words = content.split()
@@ -422,7 +430,7 @@ async def handle_natural_query(message, is_admin_user=False):
             provider_map = {
                 "gpt": "openai",
                 "google": "gemini",
-                "anthropic": "claude"
+                "claude": "anthropic"
             }
             llm_provider = provider_map.get(provider_word, provider_word)
             content = " ".join(words[1:])  # Remove provider from query
@@ -449,7 +457,7 @@ async def handle_natural_query(message, is_admin_user=False):
             async with SecureAPIClient(API_BASE_URL, API_SECRET_KEY) as client:
                 result = await client.submit_job(
                     "query",
-                    {"query": content, "use_web_search": True},
+                    {"query": content, "use_web_search": use_web_search},
                     llm_provider,
                     user_id,
                     guild_id
@@ -458,8 +466,8 @@ async def handle_natural_query(message, is_admin_user=False):
             # Format response
             if result.get('status') == 'success' and result.get('response'):
                 # Create embed response
-                provider_emojis = {"openai": "🤖", "gemini": "🧠", "claude": "🔬"}
-                provider_names = {"openai": "OpenAI", "gemini": "Gemini", "claude": "Claude"}
+                provider_emojis = {"openai": "🤖", "gemini": "🧠", "anthropic": "🔬"}
+                provider_names = {"openai": "OpenAI", "gemini": "Gemini", "anthropic": "Claude"}
                 
                 embed = discord.Embed(
                     title=f"{provider_emojis.get(llm_provider, '🤖')} {provider_names.get(llm_provider, llm_provider.title())} Response",
@@ -625,7 +633,7 @@ async def ask_command(ctx, provider: str = None, *, query: str = None):
         provider_map = {
             "gpt": "openai",
             "google": "gemini",
-            "anthropic": "claude"
+            "claude": "anthropic"
         }
         llm_provider = provider_map.get(provider.lower(), provider.lower())
     else:
@@ -668,7 +676,7 @@ async def process_ask_command(ctx_or_interaction, query: str, llm_provider: str 
     
     # Show processing message
     if llm_provider:
-        provider_names = {"openai": "🤖 OpenAI", "gemini": "🧠 Gemini", "claude": "🔬 Claude"}
+        provider_names = {"openai": "🤖 OpenAI", "gemini": "🧠 Gemini", "anthropic": "🔬 Claude"}
         processing_text = f"🔍 Searching with {provider_names.get(llm_provider, llm_provider)}..."
     else:
         processing_text = "🔍 Searching documents..."
