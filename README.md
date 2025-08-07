@@ -1,38 +1,10 @@
 # Discord RAG Bot with LLM Integration
 
-A **Discord bot with RAG (Retrieval Augmented Generation) capabilities** powered by **OpenAI, Google Gemini, and Anthropic Claude** built on [Zerops](https://zerops.io) infrastructure. Upload documents and get AI-powered responses through Discord commands with enterprise-grade security.
+A **Discord bot with RAG (Retrieval Augmented Generation) capabilities** powered by **OpenAI, Google Gemini, and Anthropic Claude** Upload documents and get AI-powered responses through Discord commands with enterprise-grade security.
 
-[![Deploy to Zerops](https://github.com/zeropsio/recipe-shared-assets/blob/main/deploy-button/green/deploy-button.svg)](https://app.zerops.io/recipe/rag-starter)
-
-## What This Is
-
-**This is**: A Discord bot with document upload, processing, and AI-enhanced search capabilities  
-**Features**: 
-- 🤖 **OpenAI GPT integration** - Smart responses using your documents
-- 🧠 **Google Gemini integration** - Advanced AI reasoning over your content  
-- 🔬 **Anthropic Claude integration** - Sophisticated analysis of your documents
-- 🔒 **Enterprise Security** - Discord authentication, rate limiting, audit logging
-- 📚 **Document Processing** - Vector embeddings, semantic search, caching
-- ⚡ **Real-time Processing** - NATS queues, async document processing
-
-Transform your documents into an intelligent, conversational knowledge base accessible through Discord.
-
-## The Infrastructure Challenge
-
-Modern RAG applications need:
-- Vector database (Qdrant)
-- Relational database (PostgreSQL)  
-- Caching layer (Valkey/Redis)
-- Message queue (NATS)
-- Object storage (S3-compatible)
-- API service + Workers
-- Load balancing, SSL, scaling, monitoring...
-
-Setting this up traditionally requires extensive DevOps knowledge. With Zerops, it's just YAML configuration.
+ps: if you find any flaw feel free to file an issue or pr :D
 
 ## What This Example Shows
-
-### 1. One-Click Infrastructure
 
 Deploy 7 interconnected services in 60 seconds:
 
