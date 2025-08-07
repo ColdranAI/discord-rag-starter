@@ -696,8 +696,16 @@ Please provide a comprehensive answer citing your sources."""
             
             if file_type == "application/pdf":
                 text = self.extract_text_from_pdf(content)
-            elif file_type.startswith("text/"):
+            elif file_type.startswith("text/") or filename.lower().endswith(('.txt', '.md', '.mdx', '.py', '.js', '.ts', '.tsx', '.jsx', '.html', '.css', '.xml', '.yaml', '.yml', '.log', '.csv', '.toml', '.ini', '.conf')):
                 text = content.decode('utf-8', errors='ignore')
+            elif filename.lower().endswith('.json'):
+                # Handle JSON files
+                try:
+                    import json
+                    json_data = json.loads(content.decode('utf-8', errors='ignore'))
+                    text = json.dumps(json_data, indent=2)  # Pretty print for better chunking
+                except Exception:
+                    text = content.decode('utf-8', errors='ignore')  # Fallback to raw text
             else:
                 # Try as text anyway
                 text = content.decode('utf-8', errors='ignore')
@@ -953,9 +961,14 @@ Please provide a comprehensive answer citing your sources."""
                     response TEXT,
                     processing_time FLOAT,
                     token_count INTEGER,
-                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    INDEX(user_id, timestamp)
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+            """)
+            
+            # Create index separately (PostgreSQL syntax)
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_llm_interactions_user_timestamp 
+                ON llm_interactions(user_id, timestamp)
             """)
             
             # Update documents table if needed

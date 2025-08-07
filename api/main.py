@@ -36,7 +36,7 @@ API_SECRET_KEY = os.getenv("API_SECRET_KEY")
 ALLOWED_GUILD_ID = os.getenv("ALLOWED_GUILD_ID")
 # No IP whitelisting needed - private container network
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", "10485760"))  # 10MB default
-ALLOWED_MIME_TYPES = os.getenv("ALLOWED_MIME_TYPES", "application/pdf,text/plain,text/markdown").split(",")
+ALLOWED_FILE_EXTENSIONS = os.getenv("ALLOWED_FILE_EXTENSIONS", ".pdf,.txt,.md,.mdx,.json,.csv,.log,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.toml,.ini,.conf").split(",")
 
 # LLM Configuration
 USE_OPENAI = os.getenv("USE_OPENAI", "false").lower() == "true"
@@ -150,9 +150,13 @@ def verify_file_security(file: UploadFile):
     if hasattr(file, 'size') and file.size > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail=f"File too large. Max size: {MAX_FILE_SIZE} bytes")
     
-    # Check MIME type
-    if file.content_type not in ALLOWED_MIME_TYPES:
-        raise HTTPException(status_code=415, detail=f"File type not allowed. Allowed types: {ALLOWED_MIME_TYPES}")
+    # Check file extension
+    if file.filename:
+        file_ext = "." + file.filename.split(".")[-1].lower() if "." in file.filename else ""
+        if file_ext not in ALLOWED_FILE_EXTENSIONS:
+            raise HTTPException(status_code=415, detail=f"File extension not allowed. Allowed extensions: {ALLOWED_FILE_EXTENSIONS}")
+    else:
+        raise HTTPException(status_code=400, detail="Filename is required")
     
     # Check filename for path traversal
     if file.filename and (".." in file.filename or "/" in file.filename or "\\" in file.filename):
