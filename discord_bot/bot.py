@@ -22,7 +22,7 @@ API_SECRET_KEY = os.getenv("API_SECRET_KEY")
 ADMIN_DISCORD_ID = int(os.getenv("ADMIN_DISCORD_ID")) if os.getenv("ADMIN_DISCORD_ID") else None
 ALLOWED_GUILD_ID = int(os.getenv("ALLOWED_GUILD_ID")) if os.getenv("ALLOWED_GUILD_ID") else None
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", "10485760"))  # 10MB
-ALLOWED_FILE_EXTENSIONS = os.getenv("ALLOWED_FILE_EXTENSIONS", ".pdf,.txt,.md").split(",")
+ALLOWED_FILE_EXTENSIONS = os.getenv("ALLOWED_FILE_EXTENSIONS", ".pdf,.txt,.md,.mdx,.json,.csv,.log,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.toml,.ini,.conf").split(",")
 
 # Channel monitoring configuration
 USE_CHANNEL = os.getenv("USE_CHANNEL", "false").lower() == "true"
