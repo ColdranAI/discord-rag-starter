@@ -34,8 +34,8 @@ except ImportError:
 
 # ML/AI imports
 from sentence_transformers import SentenceTransformer
-import openai
-import anthropic
+from openai import AsyncOpenAI
+from anthropic import AsyncAnthropic
 import google.generativeai as genai
 from exa_py import Exa
 
@@ -86,6 +86,10 @@ class LLMProcessor:
         self.anthropic_client = None
         self.gemini_client = None
         self.exa_client = None
+
+        # Track available LLM providers and default selection
+        self.available_llm_providers = []
+        self.default_llm_provider = os.getenv("DEFAULT_LLM_PROVIDER")
         
         # Configuration
         self.chunk_size = int(os.getenv("CHUNK_SIZE", "1000"))
@@ -171,25 +175,36 @@ class LLMProcessor:
     async def _init_llm_clients(self):
         """Initialize LLM clients based on configuration"""
         if os.getenv("USE_OPENAI", "false").lower() == "true":
-            self.openai_client = openai.OpenAI(
+            self.openai_client = AsyncOpenAI(
                 api_key=os.getenv("OPENAI_API_KEY")
             )
+            self.available_llm_providers.append("openai")
             logger.info("OpenAI client initialized")
-        
+
         if os.getenv("USE_ANTHROPIC", "false").lower() == "true":
-            self.anthropic_client = anthropic.Anthropic(
+            self.anthropic_client = AsyncAnthropic(
                 api_key=os.getenv("ANTHROPIC_API_KEY")
             )
+            self.available_llm_providers.append("anthropic")
             logger.info("Anthropic client initialized")
-        
+
         if os.getenv("USE_GEMINI", "false").lower() == "true":
             genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
             self.gemini_client = genai.GenerativeModel('gemini-pro')
+            self.available_llm_providers.append("gemini")
             logger.info("Gemini client initialized")
-        
+
         if os.getenv("USE_EXA", "false").lower() == "true":
             self.exa_client = Exa(api_key=os.getenv("EXA_API_KEY"))
             logger.info("Exa client initialized")
+
+        # Determine default provider if not set or unavailable
+        if not self.default_llm_provider or self.default_llm_provider not in self.available_llm_providers:
+            if self.available_llm_providers:
+                self.default_llm_provider = self.available_llm_providers[0]
+                logger.info(f"Default LLM provider set to {self.default_llm_provider}")
+            else:
+                logger.warning("No LLM providers initialized")
     
     def detect_file_type(self, file_content: bytes, filename: str = "") -> str:
         """Detect file type using python-magic or fallback to mimetypes"""
@@ -556,48 +571,49 @@ Please provide a comprehensive answer citing your sources."""
         """Legacy method - now redirects to enhanced prompt construction"""
         return self.construct_enhanced_prompt(query, context_chunks, None)
     
-    async def call_llm(self, prompt: str, llm_provider: str) -> Optional[str]:
+    async def call_llm(self, prompt: str, llm_provider: Optional[str] = None) -> Optional[str]:
         """Call specified LLM provider with proper error handling and retries"""
         max_retries = 3
         base_delay = 1
-        
+        provider = llm_provider or self.default_llm_provider
+
+        if provider not in self.available_llm_providers:
+            logger.error(f"Unsupported or unconfigured LLM provider: {provider}")
+            return None
+
         for attempt in range(max_retries):
             try:
-                if llm_provider == "openai" and self.openai_client:
+                if provider == "openai":
                     response = await self._call_openai(prompt)
-                elif llm_provider == "anthropic" and self.anthropic_client:
+                elif provider == "anthropic":
                     response = await self._call_anthropic(prompt)
-                elif llm_provider == "gemini" and self.gemini_client:
+                elif provider == "gemini":
                     response = await self._call_gemini(prompt)
                 else:
-                    logger.error(f"Unsupported or unconfigured LLM provider: {llm_provider}")
-                    return None
-                
+                    response = None
+
                 if response:
                     return response
-                    
+
             except Exception as e:
                 wait_time = base_delay * (2 ** attempt)
                 logger.warning(f"LLM call failed (attempt {attempt + 1}): {e}")
-                
+
                 if attempt < max_retries - 1:
                     await asyncio.sleep(wait_time)
                 else:
-                    logger.error(f"All LLM attempts failed for {llm_provider}")
-        
+                    logger.error(f"All LLM attempts failed for {provider}")
+
         return None
     
     async def _call_openai(self, prompt: str) -> Optional[str]:
         """Call OpenAI API"""
         try:
-            response = self.openai_client.chat.completions.create(
+            response = await self.openai_client.chat.completions.create(
                 model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"),
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
+                messages=[{"role": "user", "content": prompt}],
                 max_tokens=1000,
                 temperature=0.1,
-                timeout=30
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -607,11 +623,10 @@ Please provide a comprehensive answer citing your sources."""
     async def _call_anthropic(self, prompt: str) -> Optional[str]:
         """Call Anthropic API"""
         try:
-            response = self.anthropic_client.messages.create(
+            response = await self.anthropic_client.messages.create(
                 model=os.getenv("ANTHROPIC_MODEL", "claude-3-sonnet-20240229"),
                 max_tokens=1000,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=30
             )
             return response.content[0].text
         except Exception as e:
@@ -621,13 +636,13 @@ Please provide a comprehensive answer citing your sources."""
     async def _call_gemini(self, prompt: str) -> Optional[str]:
         """Call Gemini API"""
         try:
-            response = self.gemini_client.generate_content(
+            response = await self.gemini_client.generate_content_async(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
                     model=os.getenv("GEMINI_MODEL", "gemini-pro"),
                     max_output_tokens=1000,
-                    temperature=0.1
-                )
+                    temperature=0.1,
+                ),
             )
             return response.text
         except Exception as e:
@@ -779,7 +794,7 @@ Please provide a comprehensive answer citing your sources."""
         """Process query job with LLM enhancement and optional web search"""
         start_time = time.time()
         query = job.data['query']
-        llm_provider = job.llm_provider
+        llm_provider = job.llm_provider or self.default_llm_provider
         user_id = job.user_id
         use_web_search = job.data.get('use_web_search', False)  # Default to False - use only when requested
         
