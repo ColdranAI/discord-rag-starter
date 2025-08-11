@@ -23,9 +23,9 @@ import logging
 import resource
 
 # LLM imports
-import openai
+from openai import AsyncOpenAI
 import google.generativeai as genai
-import anthropic
+from anthropic import AsyncAnthropic
 
 # Load environment variables
 load_dotenv()
@@ -46,6 +46,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 DEFAULT_LLM_MODEL = os.getenv("DEFAULT_LLM_MODEL", "gpt-3.5-turbo")  # fallback model
+DEFAULT_LLM_PROVIDER = os.getenv("DEFAULT_LLM_PROVIDER")
+available_llm_providers: List[str] = []
 
 # Disable docs in production
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
@@ -181,7 +183,7 @@ async def security_headers_middleware(request: Request, call_next):
 
 @app.on_event("startup")
 async def startup():
-    global nc, db_pool, s3, redis_client, openai_client, gemini_client, anthropic_client
+    global nc, db_pool, s3, redis_client, openai_client, gemini_client, anthropic_client, DEFAULT_LLM_PROVIDER, available_llm_providers
     import asyncio
     import time
     
@@ -305,28 +307,39 @@ async def startup():
 
     # Initialize LLM clients
     logger.info("Initializing LLM clients...")
-    
+
     if USE_OPENAI and OPENAI_API_KEY:
         try:
-            openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+            openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+            available_llm_providers.append("openai")
             logger.info("OpenAI client initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {e}")
-    
+
     if USE_GEMINI and GEMINI_API_KEY:
         try:
             genai.configure(api_key=GEMINI_API_KEY)
             gemini_client = genai.GenerativeModel('gemini-pro')
+            available_llm_providers.append("gemini")
             logger.info("Gemini client initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize Gemini client: {e}")
-    
+
     if USE_ANTHROPIC and ANTHROPIC_API_KEY:
         try:
-            anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            anthropic_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+            available_llm_providers.append("anthropic")
             logger.info("Anthropic client initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize Anthropic client: {e}")
+
+    # Determine default LLM provider if not set
+    if not DEFAULT_LLM_PROVIDER or DEFAULT_LLM_PROVIDER not in available_llm_providers:
+        if available_llm_providers:
+            DEFAULT_LLM_PROVIDER = available_llm_providers[0]
+            logger.info(f"Default LLM provider set to {DEFAULT_LLM_PROVIDER}")
+        else:
+            logger.warning("No LLM providers configured")
 
 async def log_audit(user_id: str, action: str, resource_id: str = None, request: Request = None, details: Dict[str, Any] = None):
     """Log audit events"""
@@ -341,17 +354,19 @@ async def log_audit(user_id: str, action: str, resource_id: str = None, request:
 
 async def generate_llm_response(query: str, context_documents: List[Dict], llm_provider: str = None) -> str:
     """Generate LLM-enhanced response using the specified provider"""
-    global openai_client, gemini_client, anthropic_client
-    
+    global openai_client, gemini_client, anthropic_client, DEFAULT_LLM_PROVIDER
+
+    provider = llm_provider or DEFAULT_LLM_PROVIDER
+
     # Build context from search results
     context = ""
     if context_documents:
         context = "\n\n".join([
             f"Document: {doc.get('payload', {}).get('filename', 'Unknown')}\n"
             f"Content: {doc.get('payload', {}).get('text', '')[:500]}..."
-            for doc in context_documents[:3]  # Use top 3 results
+            for doc in context_documents[:3]
         ])
-    
+
     # Create prompt
     prompt = f"""Based on the following document excerpts, please answer the user's question. If the documents don't contain relevant information, say so.
 
@@ -363,35 +378,31 @@ User question: {query}
 Please provide a helpful and accurate response based on the available context."""
 
     try:
-        # Determine which LLM to use
-        if llm_provider == "openai" and openai_client:
-            response = openai_client.chat.completions.create(
+        if provider == "openai" and openai_client:
+            response = await openai_client.chat.completions.create(
                 model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"),
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant that answers questions based on provided document context."},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=500,
-                temperature=0.7
+                temperature=0.7,
             )
             return response.choices[0].message.content
-            
-        elif llm_provider == "gemini" and gemini_client:
-            response = gemini_client.generate_content(prompt)
+
+        elif provider == "gemini" and gemini_client:
+            response = await gemini_client.generate_content_async(prompt)
             return response.text
-            
-        elif llm_provider == "anthropic" and anthropic_client:
-            response = anthropic_client.messages.create(
+
+        elif provider == "anthropic" and anthropic_client:
+            response = await anthropic_client.messages.create(
                 model=os.getenv("ANTHROPIC_MODEL", "claude-3-sonnet-20240229"),
                 max_tokens=500,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
+                messages=[{"role": "user", "content": prompt}],
             )
             return response.content[0].text
-            
+
         else:
-            # Fallback to search results without LLM
             if context_documents:
                 return f"Found {len(context_documents)} relevant documents. Here are the key excerpts:\n\n" + \
                        "\n\n".join([
@@ -400,10 +411,9 @@ Please provide a helpful and accurate response based on the available context.""
                        ])
             else:
                 return "No relevant documents found for your query."
-                
+
     except Exception as e:
         logging.error(f"LLM generation failed: {e}")
-        # Fallback to search results
         if context_documents:
             return f"Found {len(context_documents)} relevant documents. Here are the key excerpts:\n\n" + \
                    "\n\n".join([
@@ -490,8 +500,9 @@ async def search(
     
     if len(query) > 500:
         raise HTTPException(status_code=400, detail="Query too long")
-    
-    # Validate LLM provider
+
+    # Determine and validate LLM provider
+    llm = llm or DEFAULT_LLM_PROVIDER
     if llm and llm not in ["openai", "gemini", "anthropic"]:
         raise HTTPException(status_code=400, detail="Invalid LLM provider. Use: openai, gemini, or anthropic")
     
